@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.cuda.nvtx as nvtx
 
-def knn(x, k):
+def knn(x, k=20):
     inner = -2*torch.matmul(x.transpose(2, 1), x)
     xx = torch.sum(x**2, dim=1, keepdim=True)
     pairwise_distance = -xx - inner - xx.transpose(2, 1)
@@ -196,44 +196,54 @@ class DGCNN_DA(nn.Module):
         dim = x.size(1)
         num_points = x.size(2)
         
-        x = x.view(batch_size, dim, num_points, -1)
         
         print("--------------------------------------------------------------------\nm1")
+        nn_idx = knn(x)
+        x = x.view(batch_size, dim, num_points, -1)
+        
         print("(get_model) conv2d input:", x.shape)
         x = self.conv1(x)
         print("(get_model) conv2d output:", x.shape)
-        x = get_graph_feature(x)
+        x = get_graph_feature(x, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x.shape)
-        x1 = x.max(dim=-1, keepdim= True)[0]
+        x1 = x.max(dim=-1, keepdim= False)[0]
         print("concat:", x1.shape)
         
         print("--------------------------------------------------------------------\nm2")
+        nn_idx = knn(x1)
+        x1 = x1.view(batch_size, dim, num_points, -1)
+        
         print("(get_model) conv2d input:", x1.shape)
         x2 = self.conv2(x1)
         print("(get_model) conv2d output:", x2.shape)
-        x2 = get_graph_feature(x2)
+        x2 = get_graph_feature(x2, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x2.shape)
-        x2 = x2.max(dim=-1, keepdim=True)[0]
+        x2 = x2.max(dim=-1, keepdim=False)[0]
         print("concat:", x2.shape)
         print("--------------------------------------------------------------------\nm3")
+        nn_idx = knn(x2)
+        x2 = x2.view(batch_size, dim, num_points, -1)
         print("(get_model) conv2d input:", x2.shape)
         x3 = self.conv3(x2)
         print("(get_model) conv2d output:", x3.shape)
-        x3 = get_graph_feature(x3)
+        x3 = get_graph_feature(x3, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x3.shape)
-        x3 = x3.max(dim=-1, keepdim=True)[0]
+        x3 = x3.max(dim=-1, keepdim=False)[0]
         print("concat:", x3.shape)
         print("--------------------------------------------------------------------\nm4")
+        nn_idx = knn(x3)
+        x3 = x3.view(batch_size, dim, num_points, -1)
+        
         print("(get_model) conv2d input:", x3.shape)
         x4 = self.conv4(x3)
         print("(get_model) conv2d output:", x4.shape)
-        x4 = get_graph_feature(x4)
+        x4 = get_graph_feature(x4, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x4.shape)
-        x4 = x4.max(dim=-1, keepdim=True)[0]
+        x4 = x4.max(dim=-1, keepdim=False)[0]
         print("concat:", x4.shape)
         print("--------------------------------------------------------------------\nm5")
         
