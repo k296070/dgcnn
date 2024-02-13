@@ -32,12 +32,12 @@ def get_graph_feature(x, k=20, idx=None):
     num_points = x.size(2)
     x = x.view(batch_size, -1, num_points)
     if idx is None:
-        nvtx.range_push("knn")
+        #nvtx.range_push("knn")
         idx = knn(x, k=k)   # (batch_size, num_points, k)
-        nvtx.range_pop()
+        #nvtx.range_pop()
     device = torch.device('cuda')
 
-    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+    idx_base = torch.arange(0, batch_size).view(-1, 1, 1)*num_points
 
     idx = idx + idx_base
 
@@ -51,7 +51,7 @@ def get_graph_feature(x, k=20, idx=None):
     x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
     
     feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 1, 2).contiguous()
-    nvtx.range_pop()
+    #nvtx.range_pop()
   
     return feature
 
@@ -124,7 +124,7 @@ class DGCNN(nn.Module):
         self.linear3 = nn.Linear(256, output_channels)
 
     def forward(self, x):
-        nvtx.range_push("forward_default")
+        #nvtx.range_push("forward_default")
         batch_size = x.size(0)
         x = get_graph_feature(x, k=self.k)
         x = self.conv1(x)
@@ -154,12 +154,15 @@ class DGCNN(nn.Module):
         x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
         x = self.dp2(x)
         x = self.linear3(x)
-        nvtx.range_pop()
+        #nvtx.range_pop()
         return x
 
 class DGCNN_DA(nn.Module):
-    def __init__(self):
+    def __init__(self, args = None, output_channels=40):
         super(DGCNN_DA, self).__init__()
+        #self.args = args
+        #self.k = args.k
+        
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
         self.bn3 = nn.BatchNorm2d(64)
@@ -191,7 +194,7 @@ class DGCNN_DA(nn.Module):
         self.linear3 = nn.Linear(256, 40)
         
     def forward(self, x):
-        nvtx.range_push("forward_DA")
+        #nvtx.range_push("forward_DA")
         batch_size = x.size(0)
         dim = x.size(1)
         num_points = x.size(2)
@@ -212,8 +215,11 @@ class DGCNN_DA(nn.Module):
         
         print("--------------------------------------------------------------------\nm2")
         nn_idx = knn(x1)
+        batch_size = x1.size(0)
+        dim = x1.size(1)
+        num_points = x1.size(2)        
         x1 = x1.view(batch_size, dim, num_points, -1)
-        
+
         print("(get_model) conv2d input:", x1.shape)
         x2 = self.conv2(x1)
         print("(get_model) conv2d output:", x2.shape)
@@ -224,7 +230,11 @@ class DGCNN_DA(nn.Module):
         print("concat:", x2.shape)
         print("--------------------------------------------------------------------\nm3")
         nn_idx = knn(x2)
+        batch_size = x2.size(0)
+        dim = x2.size(1)
+        num_points = x2.size(2)        
         x2 = x2.view(batch_size, dim, num_points, -1)
+
         print("(get_model) conv2d input:", x2.shape)
         x3 = self.conv3(x2)
         print("(get_model) conv2d output:", x3.shape)
@@ -235,15 +245,19 @@ class DGCNN_DA(nn.Module):
         print("concat:", x3.shape)
         print("--------------------------------------------------------------------\nm4")
         nn_idx = knn(x3)
+        batch_size = x3.size(0)
+        dim = x3.size(1)
+        num_points = x3.size(2)
+
         x3 = x3.view(batch_size, dim, num_points, -1)
-        
+
         print("(get_model) conv2d input:", x3.shape)
         x4 = self.conv4(x3)
         print("(get_model) conv2d output:", x4.shape)
         x4 = get_graph_feature(x4, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x4.shape)
-        x4 = x4.max(dim=-1, keepdim=False)[0]
+        x4 = x4.max(dim=-1, keepdim=True)[0]
         print("concat:", x4.shape)
         print("--------------------------------------------------------------------\nm5")
         
@@ -261,5 +275,12 @@ class DGCNN_DA(nn.Module):
         x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
         x = self.dp2(x)
         x = self.linear3(x)
-        nvtx.range_pop()
+        #nvtx.range_pop()
         return x
+    
+if __name__=='__main__':
+    dgcnn = DGCNN_DA()
+    x=(torch.rand(32, 3, 1024)*100)
+    x = dgcnn(x)
+    print("--------------------------------------------------------------------\nRESULT")
+    print(x)
