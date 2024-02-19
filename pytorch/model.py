@@ -129,8 +129,8 @@ class PointNet2_DA(nn.Module):
 class DGCNN(nn.Module):
     def __init__(self, args, output_channels=40):
         super(DGCNN, self).__init__()
-        self.args = args
-        self.k = args.k
+        #self.args = args
+        #self.k = args.k
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
@@ -198,8 +198,8 @@ class DGCNN(nn.Module):
 class DGCNN_DA(nn.Module):
     def __init__(self, args = None, output_channels=40):
         super(DGCNN_DA, self).__init__()
-        self.args = args
-        self.k = args.k
+        #self.args = args
+        #self.k = args.k
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
