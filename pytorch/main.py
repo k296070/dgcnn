@@ -17,7 +17,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNet40
-from model import PointNet, DGCNN
+from model import PointNet, DGCNN, DGCNN_DA, PointNet2, PointNet2_DA
 import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
@@ -49,6 +49,12 @@ def train(args, io):
         model = PointNet(args).to(device)
     elif args.model == 'dgcnn':
         model = DGCNN(args).to(device)
+    elif args.model == 'dgcnn_DA':
+        model = DGCNN_DA(args).to(device)
+    elif args.model == 'pointnet2':
+        model = PointNet2().to(device)     
+    elif args.model == 'pointnet2_DA':
+        model = PointNet2_DA().to(device)           
     else:
         raise Exception("Not implemented")
     print(str(model))
@@ -173,8 +179,8 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', type=str, default='exp', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
-                        choices=['pointnet', 'dgcnn'],
-                        help='Model to use, [pointnet, dgcnn]')
+                        choices=['pointnet', 'dgcnn', 'dgcnn_DA', 'pointnet2', 'pointnet2_DA'],
+                        help='Model to use, [pointnet, dgcnn, dgcnn_DA, pointnet2, pointnet2_DA]')
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
                         choices=['modelnet40'])
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
