@@ -69,7 +69,7 @@ def get_graph_feature_DA(x, k=20, idx=None):
     
     point_cloud_neighbors = torch.max(point_cloud_neighbors, dim=-2, keepdim=True)[0]
     
-    x = x.view(batch_size, num_points, 1, num_dims)
+    x = x.reshape(batch_size, num_points, 1, num_dims)
     
     feature = torch.cat((x,point_cloud_neighbors-x), dim=3).permute(0, 3, 1, 2).contiguous()
     nvtx.range_pop()
