@@ -18,78 +18,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.cuda.nvtx as nvtx
 
+from dgcnn_utils import knn, get_graph_feature, get_graph_feature_DA
+from pointnet2_utils import PointNetSetAbstraction, PointNetSetAbstraction_DA
 
 def print(*args):
     return
-
-def knn(x, k=20):
-    nvtx.range_push("knn")
-    inner = -2*torch.matmul(x.transpose(2, 1), x)
-    xx = torch.sum(x**2, dim=1, keepdim=True)
-    pairwise_distance = -xx - inner - xx.transpose(2, 1)
- 
-    idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
-    nvtx.range_pop()
-    return idx
-
-
-def get_graph_feature(x, k=20, idx=None):
-    nvtx.range_push("ggf")
-    batch_size = x.size(0)
-    num_points = x.size(2)
-    x = x.view(batch_size, -1, num_points)
-    if idx is None:
-        idx = knn(x, k=k)   # (batch_size, num_points, k)
-    device = torch.device('cuda')
-
-    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
-
-    #idx_base = torch.arange(0, batch_size).view(-1, 1, 1)*num_points
-
-    idx = idx + idx_base
-
-    idx = idx.view(-1)
- 
-    num_dims = x.size(1)
-
-    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
-    feature = x.view(batch_size*num_points, -1)[idx, :]
-    feature = feature.view(batch_size, num_points, k, num_dims) 
-    x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
-    
-    feature = torch.cat((x,feature-x), dim=3).permute(0, 3, 1, 2).contiguous()
-    nvtx.range_pop()
-  
-    return feature
-
-def get_graph_feature_DA(x, k=20, idx=None):
-    nvtx.range_push("ggf")    
-    batch_size = x.size(0)
-    num_points = x.size(2)
-    x = x.view(batch_size, -1, num_points)
-    if idx is None:
-        idx = knn(x, k=k)   # (batch_size, num_points, k)
-    device = torch.device('cuda')
-
-    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
-
-    idx = idx + idx_base
-
-    idx = idx.view(-1)
- 
-    num_dims = x.size(1)
-
-    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
-    feature = x.view(batch_size*num_points, -1)[idx, :]
-    feature = feature.view(batch_size, num_points, k, num_dims) 
-    
-    feature = feature.max(dim= -2, keepdim=True)[0]
-    x = x.view(batch_size, num_points, 1, num_dims)
-    
-    feature = torch.cat((x,feature-x), dim=3).permute(0, 3, 1, 2).contiguous()
-    nvtx.range_pop()
-  
-    return feature
 
 class PointNet(nn.Module):
     def __init__(self, args, output_channels=40):
@@ -122,6 +55,76 @@ class PointNet(nn.Module):
         x = self.linear2(x)
         return x
 
+class PointNet2(nn.Module):
+    def __init__(self,num_class=40,normal_channel=False):
+        super(PointNet2, self).__init__()
+        in_channel = 3
+        self.normal_channel = normal_channel
+        self.sa1 = PointNetSetAbstraction(npoint=512, radius=0.2, nsample=32, in_channel=in_channel, mlp=[64, 64, 128], group_all=False)
+        self.sa2 = PointNetSetAbstraction(npoint=128, radius=0.4, nsample=64, in_channel=128 + 3, mlp=[128, 128, 256], group_all=False)
+        self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=256 + 3, mlp=[256, 512, 1024], group_all=True)
+        self.fc1 = nn.Linear(1024, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.drop1 = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(512, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.drop2 = nn.Dropout(0.4)
+        self.fc3 = nn.Linear(256, num_class)
+
+    def forward(self, xyz):
+        nvtx.range_push("pointnet2_default")
+        B, _, _ = xyz.shape
+        if self.normal_channel:
+            norm = xyz[:, 3:, :]
+            xyz = xyz[:, :3, :]
+        else:
+            norm = None
+        l1_xyz, l1_points = self.sa1(xyz, norm)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        x = l3_points.view(B, 1024)
+        x = self.drop1(F.relu(self.bn1(self.fc1(x))))
+        x = self.drop2(F.relu(self.bn2(self.fc2(x))))
+        x = self.fc3(x)
+        x = F.log_softmax(x, -1)
+        nvtx.range_pop()
+
+        return x
+
+class PointNet2_DA(nn.Module):
+    def __init__(self,num_class=40,normal_channel=False):
+        super(PointNet2_DA, self).__init__()
+        in_channel = 3
+        self.normal_channel = normal_channel
+        self.sa1 = PointNetSetAbstraction_DA(npoint=512, radius=0.2, nsample=32, in_channel=in_channel, mlp=[64, 64, 128], group_all=False)
+        self.sa2 = PointNetSetAbstraction_DA(npoint=128, radius=0.4, nsample=64, in_channel=128 + 3, mlp=[128, 128, 256], group_all=False)
+        self.sa3 = PointNetSetAbstraction_DA(npoint=None, radius=None, nsample=None, in_channel=256 + 3, mlp=[256, 512, 1024], group_all=True)
+        self.fc1 = nn.Linear(1024, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.drop1 = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(512, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.drop2 = nn.Dropout(0.4)
+        self.fc3 = nn.Linear(256, num_class)
+
+    def forward(self, xyz):
+        nvtx.range_push("pointnet2_DA")
+        B, _, _ = xyz.shape
+        if self.normal_channel:
+            norm = xyz[:, 3:, :]
+            xyz = xyz[:, :3, :]
+        else:
+            norm = None
+        l1_xyz, l1_points = self.sa1(xyz, norm)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        x = l3_points.view(B, 1024)
+        x = self.drop1(F.relu(self.bn1(self.fc1(x))))
+        x = self.drop2(F.relu(self.bn2(self.fc2(x))))
+        x = self.fc3(x)
+        x = F.log_softmax(x, -1)
+        nvtx.range_pop()
+        return x
 
 class DGCNN(nn.Module):
     def __init__(self, args, output_channels=40):
@@ -159,7 +162,7 @@ class DGCNN(nn.Module):
         self.linear3 = nn.Linear(256, output_channels)
 
     def forward(self, x):
-        nvtx.range_push("forward_default")
+        nvtx.range_push("dgcnn_default")
         batch_size = x.size(0)
         x = get_graph_feature(x, k=self.k)
         x = self.conv1(x)
@@ -229,7 +232,7 @@ class DGCNN_DA(nn.Module):
         self.linear3 = nn.Linear(256, 40)
         
     def forward(self, x):
-        nvtx.range_push("forward_DA")
+        nvtx.range_push("dgcnn_DA")
         batch_size = x.size(0)
         dim = x.size(1)
         num_points = x.size(2)
@@ -317,8 +320,9 @@ class DGCNN_DA(nn.Module):
         return x
     
 if __name__=='__main__':
-    dgcnn = DGCNN_DA()
-    x=(torch.rand(32, 3, 1024)*100)
+    device = torch.device("cuda" if args.cuda else "cpu")
+    dgcnn = DGCNN_DA().to(device)
+    x=(torch.rand(32, 3, 1024)*100).to(device)
     x = dgcnn(x)
     print("--------------------------------------------------------------------\nRESULT")
     print(x)
