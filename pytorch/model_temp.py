@@ -127,16 +127,16 @@ class PointNet2_DA(nn.Module):
         return x
 
 class DGCNN(nn.Module):
-    def __init__(self, args, output_channels=40):
+    def __init__(self, args=None, output_channels=40):
         super(DGCNN, self).__init__()
-        self.args = args
-        self.k = args.k
+        #self.args = args
+        #self.k = args.k
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
         self.bn3 = nn.BatchNorm2d(128)
         self.bn4 = nn.BatchNorm2d(256)
-        self.bn5 = nn.BatchNorm1d(args.emb_dims)
+        self.bn5 = nn.BatchNorm1d(512)
 
         self.conv1 = nn.Sequential(nn.Conv2d(6, 64, kernel_size=1, bias=False),
                                    self.bn1,
@@ -150,33 +150,34 @@ class DGCNN(nn.Module):
         self.conv4 = nn.Sequential(nn.Conv2d(128*2, 256, kernel_size=1, bias=False),
                                    self.bn4,
                                    nn.LeakyReLU(negative_slope=0.2))
-        self.conv5 = nn.Sequential(nn.Conv1d(512, args.emb_dims, kernel_size=1, bias=False),
+        self.conv5 = nn.Sequential(nn.Conv1d(512, 512, kernel_size=1, bias=False),
                                    self.bn5,
                                    nn.LeakyReLU(negative_slope=0.2))
-        self.linear1 = nn.Linear(args.emb_dims*2, 512, bias=False)
+        self.linear1 = nn.Linear(1024, 512, bias=False)
         self.bn6 = nn.BatchNorm1d(512)
-        self.dp1 = nn.Dropout(p=args.dropout)
+        self.dp1 = nn.Dropout(p=0.5)
         self.linear2 = nn.Linear(512, 256)
         self.bn7 = nn.BatchNorm1d(256)
-        self.dp2 = nn.Dropout(p=args.dropout)
+        self.dp2 = nn.Dropout(p=0.5)
         self.linear3 = nn.Linear(256, output_channels)
 
     def forward(self, x):
         #nvtx.range_push("forward_default")
         batch_size = x.size(0)
-        x = get_graph_feature(x, k=self.k)
+        x = get_graph_feature(x, k=20)
+        print(x.shape)
         x = self.conv1(x)
         x1 = x.max(dim=-1, keepdim=False)[0]
 
-        x = get_graph_feature(x1, k=self.k)
+        x = get_graph_feature(x1, k=20)
         x = self.conv2(x)
         x2 = x.max(dim=-1, keepdim=False)[0]
 
-        x = get_graph_feature(x2, k=self.k)
+        x = get_graph_feature(x2, k=20)
         x = self.conv3(x)
         x3 = x.max(dim=-1, keepdim=False)[0]
 
-        x = get_graph_feature(x3, k=self.k)
+        x = get_graph_feature(x3, k=20)
         x = self.conv4(x)
         x4 = x.max(dim=-1, keepdim=False)[0]
 
@@ -245,57 +246,57 @@ class DGCNN_DA(nn.Module):
         print("(get_model) conv2d input:", x.shape)
         x = self.conv1(x)
         print("(get_model) conv2d output:", x.shape)
-        x = get_graph_feature(x, idx=nn_idx)
+        x = get_graph_feature_DA(x, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x.shape)
-        x1 = x.max(dim=-1, keepdim= False)[0]
+        x1 = x
         print("concat:", x1.shape)
         
         print("--------------------------------------------------------------------\nm2")
-        nn_idx = knn(x1)
+
         batch_size = x1.size(0)
         dim = x1.size(1)
-        num_points = x1.size(2)        
-        x1 = x1.view(batch_size, dim, num_points, -1)
+        num_points = x1.size(2) 
+        
+        nn_idx = knn(x1.view(batch_size,dim,num_points))       
 
         print("(get_model) conv2d input:", x1.shape)
         x2 = self.conv2(x1)
         print("(get_model) conv2d output:", x2.shape)
-        x2 = get_graph_feature(x2, idx=nn_idx)
+        x2 = get_graph_feature_DA(x2, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x2.shape)
-        x2 = x2.max(dim=-1, keepdim=False)[0]
+
         print("concat:", x2.shape)
         print("--------------------------------------------------------------------\nm3")
-        nn_idx = knn(x2)
         batch_size = x2.size(0)
         dim = x2.size(1)
-        num_points = x2.size(2)        
-        x2 = x2.view(batch_size, dim, num_points, -1)
+        num_points = x2.size(2) 
+        
+        nn_idx = knn(x2.view(batch_size,dim,num_points))  
 
         print("(get_model) conv2d input:", x2.shape)
         x3 = self.conv3(x2)
         print("(get_model) conv2d output:", x3.shape)
-        x3 = get_graph_feature(x3, idx=nn_idx)
+        x3 = get_graph_feature_DA(x3, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x3.shape)
-        x3 = x3.max(dim=-1, keepdim=False)[0]
+
         print("concat:", x3.shape)
         print("--------------------------------------------------------------------\nm4")
-        nn_idx = knn(x3)
         batch_size = x3.size(0)
         dim = x3.size(1)
-        num_points = x3.size(2)
-
-        x3 = x3.view(batch_size, dim, num_points, -1)
+        num_points = x3.size(2) 
+        
+        nn_idx = knn(x3.view(batch_size,dim,num_points))  
 
         print("(get_model) conv2d input:", x3.shape)
         x4 = self.conv4(x3)
         print("(get_model) conv2d output:", x4.shape)
-        x4 = get_graph_feature(x4, idx=nn_idx)
+        x4 = get_graph_feature_DA(x4, idx=nn_idx)
 
         print("(get_model) neighbor search output:", x4.shape)
-        x4 = x4.max(dim=-1, keepdim=True)[0]
+
         print("concat:", x4.shape)
         print("--------------------------------------------------------------------\nm5")
         
@@ -309,18 +310,22 @@ class DGCNN_DA(nn.Module):
         
         print("--------------------------------------------------------------------\nm6")
         x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+        print("(get_model) fc1 output:", x.shape)
         x = self.dp1(x)
         x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
+        print("(get_model) fc2 output:", x.shape)
         x = self.dp2(x)
         x = self.linear3(x)
+        print("(get_model) fc3 output:", x.shape)
         #nvtx.range_pop()
         return x
     
 if __name__=='__main__':
-    #dgcnn = DGCNN_DA()
-    #x=(torch.arange(1,49).view(4,4,3))
+    dgcnn = DGCNN_DA()
+    x=(torch.rand(40, 3, 1024))
+    #x=(torch.arange(1,61).view(5,4,3))
     #x=x.transpose(1,2)
-    #knn_1 = knn(x,2)
+    knn_1 = knn(x,2)
     #print(knn_1.size())
     #
     #x=(torch.arange(64,0,-1).view(4,4,4))
@@ -332,13 +337,13 @@ if __name__=='__main__':
     #print(ggf_1.size())
     #
     #x = ggf_1.permute(0,2,3,1)
-    pointnet = PointNet2_DA()
+    #pointnet = PointNet2_DA()
     #x=(torch.arange(1,61).view(5,4,3)).type(torch.float32)
     #x=x.transpose(1,2)
-    x=(torch.rand(40, 3, 1024))
-    print("x",x)
+    #x=(torch.rand(40, 3, 1024))
+    #print("x",x)
     #print(knn_1,"\n",ggf.permute(0,2,3,1)==ggf_1.permute(0,2,3,1))
     #print(ggf_1.permute(0,2,3,1))
-    x = pointnet(x)
+    x = dgcnn(x)
     print("--------------------------------------------------------------------\nRESULT")
-    print(x, x.shape)
+    print( x.shape)
