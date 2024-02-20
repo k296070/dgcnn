@@ -39,6 +39,7 @@ def index_points(points, idx):
     Return:
         new_points:, indexed points data, [B, S, C]
     """
+    print("ip in", points.shape, idx.shape)
     device = points.device
     B = points.shape[0]
     view_shape = list(idx.shape)
@@ -47,6 +48,7 @@ def index_points(points, idx):
     repeat_shape[0] = 1
     batch_indices = torch.arange(B, dtype=torch.long).to(device).view(view_shape).repeat(repeat_shape)
     new_points = points[batch_indices, idx, :]
+    print("ip out", new_points.shape)
     return new_points
 
 

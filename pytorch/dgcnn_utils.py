@@ -13,6 +13,7 @@ def index_points(points, idx):
     Return:
         new_points:, indexed points data, [B, S, C]
     """
+    print("ip in", points.shape, idx.shape)
     device = points.device
     B = points.shape[0]
     view_shape = list(idx.shape)
@@ -21,6 +22,7 @@ def index_points(points, idx):
     repeat_shape[0] = 1
     batch_indices = torch.arange(B, dtype=torch.long).to(device).view(view_shape).repeat(repeat_shape)
     new_points = points[batch_indices, idx, :]
+    print("ip out", new_points.shape)
     return new_points
 
 def knn(x, k=20):
@@ -86,8 +88,9 @@ def get_graph_feature_DA(x, k=20, idx=None):
     feature = index_points(x,idx)
     print("feature",feature.shape)
     #feature = feature.view(batch_size, num_points, k, num_dims) 
-
-    feature = feature.max(dim= -2, keepdim=True)[0]
+    feature = feature.permute(0, 3, 1, 2)
+    feature = feature.max(dim= -1, keepdim=True)[0]
+    feature = feature.permute(0, 2, 3, 1)
     print("view before",x.shape)
     x = x.view(batch_size, num_points, 1, num_dims)
     print("after view",x.shape)
