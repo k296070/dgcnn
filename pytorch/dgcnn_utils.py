@@ -76,18 +76,19 @@ def get_graph_feature_DA(x, k=20, idx=None):
         idx = knn(x, k=k)   # (batch_size, num_points, k)
     device = torch.device('cuda')
 
-    #idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
     #idx_base = torch.arange(0, batch_size).view(-1, 1, 1)*num_points
-    #idx = idx + idx_base
+    idx = idx + idx_base
 
-    #idx = idx.view(-1)
+    idx = idx.view(-1)
 
     num_dims = x.size(1)
     print("after view",x.shape)
     x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
-    feature = index_points(x,idx)
+    feature = x.view(batch_size*num_points, -1)[idx, :]
+    
     print("feature",feature.shape)
-    #feature = feature.view(batch_size, num_points, k, num_dims) 
+    feature = feature.view(batch_size, num_points, k, num_dims) 
     feature = feature.permute(0, 3, 1, 2)
     feature = feature.max(dim= -1, keepdim=True)[0]
     feature = feature.permute(0, 2, 3, 1)
